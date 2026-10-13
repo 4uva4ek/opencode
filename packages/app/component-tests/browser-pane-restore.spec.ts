@@ -81,6 +81,7 @@ story.beforeEach(async ({ mount, page }) => {
             })
           },
         }),
+      useCommand: commands.useCommand,
       Commands: (props: { close: () => void }) => {
         const command = commands.useCommand()
         const extensions = host.useExtensionHost()
@@ -145,6 +146,51 @@ story("closes a blank browser tab from its address field without closing the ses
   await expect(root.getByRole("tab", { name: "New tab", exact: true })).toHaveCount(0)
   await expect(root.getByTestId("browser-closes")).toHaveText('["tab_33333333-3333-3333-3333-333333333333"]')
   await expect(root.getByTestId("session-state")).toHaveText("open")
+})
+
+story("toggles the element picker from the shortcut outside the page while leaving terminal copy alone", async ({ page }) => {
+  const root = page.getByTestId("browser-region-fixture")
+  const outside = root.getByRole("button", { name: "Beta", exact: true })
+  await expect(root.getByText("Registrations: 1", { exact: true })).toBeVisible()
+  await outside.click()
+  await expect(root.getByText("Registrations: 2", { exact: true })).toBeVisible()
+
+  await root.getByRole("button", { name: "Blank page", exact: true }).click()
+  const inspect = root.getByRole("button", { name: "Select an element to comment on", exact: true })
+  await expect(inspect).toBeDisabled()
+  await outside.press("ControlOrMeta+Shift+c")
+  await expect(root.getByTestId("browser-inspects")).toHaveText("[]")
+
+  await root.getByRole("button", { name: "First inventory", exact: true }).click()
+  await expect(inspect).toBeEnabled()
+  await inspect.hover()
+  const tooltip = page.getByRole("tooltip")
+  await expect(tooltip).toContainText("Select an element to comment on")
+  await expect(tooltip).not.toContainText("While the page has focus")
+
+  await outside.focus()
+  await outside.press("ControlOrMeta+Shift+c")
+  await expect(inspect).toHaveAttribute("aria-pressed", "true")
+  await expect(root.getByTestId("browser-inspects")).toHaveText(
+    '[{"tabID":"tab_33333333-3333-3333-3333-333333333333","enabled":true}]',
+  )
+
+  const address = root.getByRole("combobox", { name: "Browser address", exact: true })
+  await address.click()
+  await expect(address).toBeFocused()
+  await address.press("ControlOrMeta+Shift+c")
+  await expect(inspect).toHaveAttribute("aria-pressed", "false")
+  await expect(root.getByTestId("browser-inspects")).toHaveText(
+    '[{"tabID":"tab_33333333-3333-3333-3333-333333333333","enabled":true},{"tabID":"tab_33333333-3333-3333-3333-333333333333","enabled":false}]',
+  )
+
+  const terminal = root.getByRole("textbox", { name: "Terminal input", exact: true })
+  await terminal.focus()
+  await terminal.press("Control+Shift+c")
+  await expect(inspect).toHaveAttribute("aria-pressed", "false")
+  await expect(root.getByTestId("browser-inspects")).toHaveText(
+    '[{"tabID":"tab_33333333-3333-3333-3333-333333333333","enabled":true},{"tabID":"tab_33333333-3333-3333-3333-333333333333","enabled":false}]',
+  )
 })
 
 story("keeps a restored browser tab selected and undrawn until the desktop's first inventory", async ({ page }) => {

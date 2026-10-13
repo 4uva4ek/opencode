@@ -592,6 +592,7 @@ type RegionHost = {
   definitions: readonly Definition[]
   /** Real shell command providers for shortcut cases. */
   Shell: ParentComponent
+  useCommand(): { keybindParts(id: string): string[] }
   /** Shell fallback and the real extension command adapter. */
   Commands: Component<{ close: () => void }>
   /** The real host wrapper that renders an extension in its context. */
@@ -611,6 +612,8 @@ type RegionFixtureState = {
   blank: boolean
   /** Native browser tab close requests, by tab id. */
   closes: string[]
+  /** Native element picker requests, by tab id and state. */
+  inspects: { tabID: string; enabled: boolean }[]
 }
 
 // Component-test fixture: the real side region over the real browser and file extensions, with the host's
@@ -623,6 +626,7 @@ export function mountBrowserRegion(input: RegionHost) {
   document.body.appendChild(host)
 
   function Fixture() {
+    const command = input.useCommand()
     const alpha = "browser-test\nses_alpha"
     const beta = "browser-test\nses_beta"
     const tabID = Browser.TabID.make("tab_33333333-3333-3333-3333-333333333333")
@@ -638,6 +642,7 @@ export function mountBrowserRegion(input: RegionHost) {
       closed: false,
       blank: false,
       closes: [],
+      inspects: [],
     })
 
     // The file tree's state, Changes or All files, as the file extension stores it.
@@ -783,7 +788,13 @@ export function mountBrowserRegion(input: RegionHost) {
     const locale: Locale = { locale: () => "en", direction: () => "ltr", setDirection() {} }
     const appearance: Appearance = { font: () => "monospace" }
     const router: Router = { routing: () => false, path: () => "/" }
-    const keybinds: Keybinds = { keybind: () => [], keys: (bind) => bind.split("+"), matches: () => false }
+
+    const keybinds: Keybinds = {
+      keybind: (id) => command.keybindParts(id),
+      keys: (bind) => bind.split("+"),
+      matches: () => false,
+    }
+
     const servers: Servers = { list: () => [server.id], get: () => undefined }
     const workspaces: Workspaces = { on: () => () => undefined }
 
@@ -807,7 +818,12 @@ export function mountBrowserRegion(input: RegionHost) {
           listener({ binding: value.binding, event: { type: "state", state: { tabs: [], focusedTabID: null } } }),
         )
       },
-      inspect: async () => undefined,
+      inspect: async (value) => {
+        setStore("inspects", (items) => [...items, { tabID: value.tabID, enabled: value.enabled }])
+        listeners.forEach((listener) =>
+          listener({ binding: value.binding, event: { type: "inspect", tabID: value.tabID, active: value.enabled } }),
+        )
+      },
       highlight: async () => undefined,
       zoom: async () => undefined,
       site: async () => ({ cookies: 0 }),
@@ -943,53 +959,65 @@ export function mountBrowserRegion(input: RegionHost) {
     }
 
     return (
-      <DialogProvider>
-        <input.Shell>
-          <input.ExtensionHostProvider
-            definitions={input.definitions}
-            disabled={() => new Set<string>()}
-            apis={apis}
-            whenMounted={(run) => {
-              run()
+      <input.ExtensionHostProvider
+        definitions={input.definitions}
+        disabled={() => new Set<string>()}
+        apis={apis}
+        whenMounted={(run) => {
+          run()
 
-              return () => undefined
+          return () => undefined
+        }}
+        ipc={(token) => (token.id === BrowserPane.id && !store.away ? pane : undefined)}
+      >
+        <input.Commands close={() => setStore("closed", true)} />
+        <style>{`${barStyles}\n[data-popper-positioner] { z-index: 1001 !important; }`}</style>
+        <h1 style={{ "font-size": "24px", "margin-bottom": "16px" }}>Restored side strip</h1>
+        <nav style={{ display: "flex", gap: "12px", margin: "16px 0" }}>
+          <button onClick={() => setStore({ session: beta, closed: false })}>Beta</button>
+          <button
+            onClick={() => {
+              setStore("blank", false)
+              inventory()
             }}
-            ipc={(token) => (token.id === BrowserPane.id && !store.away ? pane : undefined)}
           >
-            <input.Commands close={() => setStore("closed", true)} />
-            <h1 style={{ "font-size": "24px", "margin-bottom": "16px" }}>Restored side strip</h1>
-            <nav style={{ display: "flex", gap: "12px", margin: "16px 0" }}>
-              <button onClick={() => setStore({ session: beta, closed: false })}>Beta</button>
-              <button onClick={inventory}>First inventory</button>
-              <button
-                onClick={() => {
-                  setStore("blank", true)
-                  inventory()
-                }}
-              >
-                Blank page
-              </button>
-              <button onClick={() => setStore("away", true)}>Pane away</button>
-              <button onClick={() => setStore("away", false)}>Pane back</button>
-            </nav>
-            <p>Registrations: {store.registrations.length}</p>
-            <p>Beta restores: {latest()?.restore ?? 0}</p>
-            <p data-testid="tree">{JSON.stringify(tree())}</p>
-            <p data-testid="session-state">{store.closed ? "closed" : "open"}</p>
-            <p data-testid="browser-closes">{JSON.stringify(store.closes)}</p>
-            <Ready>
-              <Strip />
-            </Ready>
-          </input.ExtensionHostProvider>
-        </input.Shell>
-      </DialogProvider>
+            First inventory
+          </button>
+          <button
+            onClick={() => {
+              setStore("blank", true)
+              inventory()
+            }}
+          >
+            Blank page
+          </button>
+          <button onClick={() => setStore("away", true)}>Pane away</button>
+          <button onClick={() => setStore("away", false)}>Pane back</button>
+        </nav>
+        <div data-component="terminal">
+          <textarea aria-label="Terminal input" />
+        </div>
+        <p>Registrations: {store.registrations.length}</p>
+        <p>Beta restores: {latest()?.restore ?? 0}</p>
+        <p data-testid="tree">{JSON.stringify(tree())}</p>
+        <p data-testid="session-state">{store.closed ? "closed" : "open"}</p>
+        <p data-testid="browser-closes">{JSON.stringify(store.closes)}</p>
+        <p data-testid="browser-inspects">{JSON.stringify(store.inspects)}</p>
+        <Ready>
+          <Strip />
+        </Ready>
+      </input.ExtensionHostProvider>
     )
   }
 
   return render(
     () => (
       <input.LanguageProvider locale="en">
-        <Fixture />
+        <DialogProvider>
+          <input.Shell>
+            <Fixture />
+          </input.Shell>
+        </DialogProvider>
       </input.LanguageProvider>
     ),
     host,

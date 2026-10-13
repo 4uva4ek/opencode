@@ -68,6 +68,27 @@ test.each([true, false])("resolveKeybindOption prefers a contextual command only
   )
 })
 
+test("resolveKeybindOption yields Ctrl+Shift+C inside a terminal to terminal copy", () => {
+  const inspect = { id: "browser.inspect", title: "Select an element in the browser page", editable: true as const }
+  const terminal = document.createElement("div")
+  terminal.dataset.component = "terminal"
+  const textarea = document.createElement("textarea")
+  terminal.appendChild(textarea)
+  document.body.appendChild(terminal)
+
+  try {
+    const inside = new KeyboardEvent("keydown", { key: "C", ctrlKey: true, shiftKey: true, bubbles: true })
+    textarea.dispatchEvent(inside)
+    expect(resolveKeybindOption([inspect], inside)).toBeUndefined()
+
+    const outside = new KeyboardEvent("keydown", { key: "C", ctrlKey: true, shiftKey: true, bubbles: true })
+    document.body.dispatchEvent(outside)
+    expect(resolveKeybindOption([inspect], outside)).toBe(inspect)
+  } finally {
+    terminal.remove()
+  }
+})
+
 describe("command keybinds", () => {
   test("parseKeybind handles aliases, multiple combos, and disabled bindings", () => {
     const keybinds = parseKeybind("control+option+k, mod+shift+comma")
