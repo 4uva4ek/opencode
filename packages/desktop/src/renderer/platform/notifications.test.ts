@@ -1,9 +1,15 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { createDesktopNotify } from "./notifications"
 
 const originalNotification = globalThis.Notification
 
-let latestRef: WeakRef<FakeNotification> | undefined
+const originalSetAdd = Set.prototype.add
+
+const originalSetDelete = Set.prototype.delete
+
+const retained = new Set<FakeNotification>()
+
+const created: FakeNotification[] = []
 
 const events: string[] = []
 
@@ -35,7 +41,7 @@ class FakeNotification extends EventTarget implements Notification {
     this.icon = options?.icon ?? ""
     this.silent = options?.silent ?? null
     events.push(`created:${title}:${this.body}`)
-    latestRef = new WeakRef(this)
+    created.push(this)
   }
 
   close() {
@@ -44,20 +50,31 @@ class FakeNotification extends EventTarget implements Notification {
   }
 }
 
+beforeEach(() => {
+  Set.prototype.add = function (value) {
+    if (value instanceof FakeNotification) originalSetAdd.call(retained, value)
+
+    return originalSetAdd.call(this, value)
+  }
+
+  Set.prototype.delete = function (value) {
+    if (value instanceof FakeNotification) originalSetDelete.call(retained, value)
+
+    return originalSetDelete.call(this, value)
+  }
+})
+
 afterEach(() => {
+  Set.prototype.add = originalSetAdd
+  Set.prototype.delete = originalSetDelete
+  retained.clear()
+  created.length = 0
   events.length = 0
-  latestRef = undefined
   globalThis.Notification = originalNotification
 })
 
-function flushGc() {
-  return new Promise<void>((resolve) => setImmediate(resolve)).then(() => {
-    Bun.gc(true)
-  })
-}
-
 describe("desktop notifications", () => {
-  test("retains active Notification across GC, shows and focuses the window on click, and releases it on close", async () => {
+  test("retains active Notification in a Set, shows and focuses the window on click, and releases it on close", async () => {
     globalThis.Notification = FakeNotification
 
     const notify = createDesktopNotify({
@@ -74,11 +91,11 @@ describe("desktop notifications", () => {
       events.push("session.select")
     })
 
-    await flushGc()
+    const notification = created[0]
+    expect(notification).toBeDefined()
+    expect(notification ? retained.has(notification) : false).toBe(true)
 
-    const live = latestRef?.deref()
-    expect(live).toBeDefined()
-    live?.onclick?.call(live, new Event("click"))
+    notification?.onclick?.call(notification, new Event("click"))
 
     expect(events).toEqual([
       "created:Response ready:Refactor auth flow",
@@ -87,9 +104,8 @@ describe("desktop notifications", () => {
       "session.select",
       "notification.close",
     ])
-
-    await flushGc()
-    expect(latestRef?.deref()).toBeUndefined()
+    expect(notification ? retained.has(notification) : true).toBe(false)
+    expect(notification?.onclick).toBeNull()
   })
 
   test.each([{ event: "close" as const }, { event: "error" as const }])(
@@ -104,19 +120,21 @@ describe("desktop notifications", () => {
       })
 
       await notify("Session error")
-      await flushGc()
 
-      const live = latestRef?.deref()
-      expect(live).toBeDefined()
+      const notification = created[0]
+      expect(notification).toBeDefined()
+      expect(notification ? retained.has(notification) : false).toBe(true)
 
       if (event === "close") {
-        live?.onclose?.call(live, new Event("close"))
+        notification?.onclose?.call(notification, new Event("close"))
       } else {
-        live?.onerror?.call(live, new Event("error"))
+        notification?.onerror?.call(notification, new Event("error"))
       }
 
-      await flushGc()
-      expect(latestRef?.deref()).toBeUndefined()
+      expect(notification ? retained.has(notification) : true).toBe(false)
+      expect(notification?.onclick).toBeNull()
+      expect(notification?.onclose).toBeNull()
+      expect(notification?.onerror).toBeNull()
     },
   )
 
@@ -131,6 +149,6 @@ describe("desktop notifications", () => {
 
     await notify("Response ready", "Active session")
     expect(events).toEqual([])
-    expect(latestRef).toBeUndefined()
+    expect(created).toEqual([])
   })
 })

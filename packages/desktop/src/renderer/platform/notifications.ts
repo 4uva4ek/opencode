@@ -21,6 +21,9 @@ export function createDesktopNotify(api: DesktopNotifyAPI): Platform["notify"] {
 
     const release = () => {
       activeNotifications.delete(notification)
+      notification.onclick = null
+      notification.onclose = null
+      notification.onerror = null
     }
 
     notification.onclose = release
