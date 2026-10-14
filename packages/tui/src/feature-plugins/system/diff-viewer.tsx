@@ -499,11 +499,11 @@ export function DiffViewerContent(props: {
 
   const scrollToPatchFileIndexAfterRender = (fileIndex: number, offset?: number) => {
     setPendingPatchScrollFileIndex(fileIndex)
-    requestAnimationFrame(() => {
+    renderer.requestAnimationFrame(() => {
       if (pendingPatchScrollFileIndex() !== fileIndex) return
       const patchNode = patchNodeByFileIndex.get(fileIndex)
       if (patchNode) scrollPatchNodeToTop(patchNode, offset)
-      requestAnimationFrame(() => {
+      renderer.requestAnimationFrame(() => {
         if (pendingPatchScrollFileIndex() !== fileIndex) return
         const patchNode = patchNodeByFileIndex.get(fileIndex)
         if (patchNode) scrollPatchNodeToTop(patchNode, offset)
@@ -513,9 +513,9 @@ export function DiffViewerContent(props: {
   }
 
   const scrollSinglePatchToTop = () => {
-    requestAnimationFrame(() => {
+    renderer.requestAnimationFrame(() => {
       scroll?.scrollTo(0)
-      requestAnimationFrame(() => scroll?.scrollTo(0))
+      renderer.requestAnimationFrame(() => scroll?.scrollTo(0))
     })
   }
 
