@@ -222,6 +222,69 @@ test.each([60, 80])("a panel opened at %i columns can split after growing withou
   expect(setup.requests.diff).toHaveLength(1)
 })
 
+test("narrow terminals show the panel full screen, then compact, and dock again without remounting", async () => {
+  await using state = await tmpdir()
+  await using setup = await createSessionFixture(state.path, { diffs: { tree: true } })
+  await ready(setup)
+  const prompt = editor(setup)
+  const transcript = node(setup, "msg_panel_11")
+  setup.mockInput.pressKey("F6")
+  await panelReady(setup)
+  const panel = node(setup, "session-panel")
+  const patches = scroll(setup)
+  setup.mockInput.pressKey("m")
+  await setup.waitForFrame(() => text(setup, "diff-review-count") === "1/4")
+  setup.mockInput.pressKey("j")
+  await setup.waitFor(() => patches.scrollTop > 0)
+  const top = patches.scrollTop
+  const retained = () => {
+    expect(node(setup, "session-panel")).toBe(panel)
+    expect(scroll(setup)).toBe(patches)
+    expect(node(setup, "msg_panel_11")).toBe(transcript)
+    expect(prompt.isDestroyed).toBe(false)
+    expect(setup.renderer.currentFocusedRenderable).toBe(panel)
+    expect(setup.requests.diff).toHaveLength(1)
+  }
+
+  // Below the split threshold the panel takes over with the full layout, including its file tree.
+  setup.resize(107, 36)
+  await setup.waitFor(() => panel.width === 107)
+  retained()
+  expect(patches.scrollTop).toBe(top)
+  expect(setup.renderer.root.findDescendantById("diff-files")).toBeDefined()
+  expect(setup.renderer.root.findDescendantById("diff-footer")).toBeUndefined()
+  expect(text(setup, "diff-source-header")).toContain("1/4")
+  setup.mockInput.pressKey("j")
+  await setup.waitFor(() => patches.scrollTop > top)
+  expect(prompt.plainText).toBe("")
+
+  // Narrower still, the full screen keeps the compact panel rendering without a prompt to focus.
+  setup.resize(80, 36)
+  await setup.waitFor(() => panel.width === 80 && setup.renderer.root.findDescendantById("diff-footer") !== undefined)
+  retained()
+  expect(setup.renderer.root.findDescendantById("diff-files")).toBeUndefined()
+  expect(text(setup, "diff-review-count")).toBe("1/4")
+  expect(text(setup, "diff-footer")).toMatch(/\nescape close\s+\? see all$/)
+  expect(text(setup, "diff-footer")).not.toContain("focus prompt")
+  focus(setup, "left")
+  await setup.flush()
+  expect(setup.renderer.currentFocusedRenderable).toBe(panel)
+
+  setup.resize(108, 36)
+  await setup.waitFor(() => panel.width < 108 && panel.x > 0)
+  retained()
+  expect(setup.renderer.root.findDescendantById("diff-files")).toBeUndefined()
+  expect(text(setup, "diff-footer")).toContain("ctrl+x ← focus prompt")
+  focus(setup, "left")
+  await setup.waitFor(() => setup.renderer.currentFocusedEditor === prompt)
+  const docked = patches.scrollTop
+  await setup.mockInput.typeText("jq")
+  await setup.flush()
+  expect(prompt.plainText).toBe("jq")
+  expect(patches.scrollTop).toBe(docked)
+  expect(node(setup, "session-panel")).toBe(panel)
+})
+
 test("split eligibility uses the columns remaining beside vertical session tabs", async () => {
   await using state = await tmpdir()
   await using setup = await createSessionFixture(state.path, {

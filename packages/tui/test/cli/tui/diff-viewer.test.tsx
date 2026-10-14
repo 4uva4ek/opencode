@@ -322,10 +322,12 @@ test.each([50, 80, 160])(
       const header = viewer.app.renderer.root.findDescendantById("diff-source-header")!
       const source = viewer.app.renderer.root.findDescendantById("diff-source-switch")!
       const count = viewer.app.renderer.root.findDescendantById("diff-review-count")!
-      expect(header.height).toBe(1)
-      expect(source.y).toBe(header.y)
-      expect(count.y).toBe(header.y)
-      expect(viewer.app.captureCharFrame().split("\n")[header.y]).toMatch(/All · vs release\s+0\/1/)
+      // The compact layout pads its header down to line up with the flush cards below it.
+      const row = width < 88 ? header.y + 1 : header.y
+      expect(header.height).toBe(width < 88 ? 2 : 1)
+      expect(source.y).toBe(row)
+      expect(count.y).toBe(row)
+      expect(viewer.app.captureCharFrame().split("\n")[row]).toMatch(/All · vs release\s+0\/1/)
       expect(viewer.app.captureCharFrame()).not.toContain("reviewed")
       expect(viewer.vcsDiffInput()).toMatchObject({ base: "refs/remotes/origin/release" })
       await viewer.app.mockMouse.click(source.x, source.y)
@@ -345,7 +347,7 @@ test.each([50, 80, 160])(
       await viewer.app.waitForFrame((frame) => !frame.includes("Diff source"))
       viewer.commands.get("diff.mark_reviewed")!.run()
       await viewer.app.flush()
-      expect(viewer.app.captureCharFrame().split("\n")[header.y]).toMatch(/All · vs release\s+1\/1/)
+      expect(viewer.app.captureCharFrame().split("\n")[row]).toMatch(/All · vs release\s+1\/1/)
       await chooseSource(viewer, 2)
       await viewer.app.waitForFrame((frame) => frame.includes("Uncommitted · vs HEAD"))
       viewer.app.mockInput.pressKey("d")
@@ -370,18 +372,21 @@ test.each([50, 80, 100, 160])(
     try {
       const header = viewer.app.renderer.root.findDescendantById("diff-source-header")!
       const count = viewer.app.renderer.root.findDescendantById("diff-review-count")!
-      const row = viewer.app.captureCharFrame().split("\n")[header.y]
-      expect(header.height).toBe(1)
+      const y = header.y + header.height - 1
+      const row = viewer.app.captureCharFrame().split("\n")[y]
+      expect(header.height).toBe(width < 88 ? 2 : 1)
       expect(row).toContain("Committed · vs")
       expect(row).toContain("0/1")
       expect(row).not.toContain("release/very-long-comparison-branch-name-that-does-not-fit-in-the-header")
-      expect(count.y).toBe(header.y)
+      expect(count.y).toBe(y)
       expect(count.x + count.width).toBeLessThanOrEqual(header.x + header.width)
       const hint = viewer.app.renderer.root.findDescendantById("diff-help-shortcut")!
-      if (width < 90) {
-        expect(hint.y).toBe(header.y)
-        expect(hint.x).toBeGreaterThan(count.x + count.width)
-        expect(findScrollBox(viewer.app.renderer.root)!.viewport.y).toBeGreaterThan(header.y)
+      const scroll = findScrollBox(viewer.app.renderer.root)!
+      if (width < 88) {
+        // The compact layout moves help from the header row into its footer.
+        expect(hint.y).toBe(viewer.app.renderer.root.findDescendantById("diff-footer")!.y + 1)
+        expect(hint.y).toBeGreaterThanOrEqual(scroll.viewport.y + scroll.viewport.height)
+        expect(scroll.viewport.y).toBeGreaterThan(y)
       }
     } finally {
       viewer.app.renderer.destroy()
@@ -1037,7 +1042,8 @@ test.each([100, 160])("shared pane edges align headings and stay fixed at %i col
     await viewer.app.flush()
     expect(viewer.app.renderer.root.findDescendantById("diff-tree-top-edge")).toBeUndefined()
     expect(viewer.app.renderer.root.findDescendantById("diff-patch-top-edge")).toBeDefined()
-    expect(viewer.app.captureCharFrame().split("\n")[title + 1]).toContain("file01.txt")
+    // The compact header takes two rows above the shared pane edge.
+    expect(viewer.app.captureCharFrame().split("\n")[title + 2]).toContain("file01.txt")
   } finally {
     viewer.app.renderer.destroy()
   }
@@ -1175,17 +1181,63 @@ test("compact gutter help leaves the full patch viewport available when the side
     viewer.app.mockInput.pressKey("b")
     await viewer.app.flush()
     expect(viewer.app.renderer.root.findDescendantById("diff-help-shortcut")!.y).toBe(21)
+    // Too narrow for the tree, full screen switches to the compact layout and its footer holds the help.
     viewer.app.resize(80, 24)
     await viewer.app.flush()
-    expect(viewer.app.renderer.root.findDescendantById("diff-help-shortcut")!.y).toBe(0)
-    expect(viewer.app.renderer.root.findDescendantById("diff-help-shortcut")!.x).toBe(79)
-    expect(scroll.viewport.y + scroll.viewport.height).toBe(24)
+    const footer = viewer.app.renderer.root.findDescendantById("diff-footer")!
+    expect(viewer.app.renderer.root.findDescendantById("diff-files")).toBeUndefined()
+    expect(viewer.app.renderer.root.findDescendantById("diff-help-shortcut")!.y).toBe(footer.y + 1)
+    expect(scroll.viewport.y + scroll.viewport.height).toBe(footer.y)
     expect(viewer.app.captureCharFrame()).not.toContain("? help")
-    expect(viewer.app.captureCharFrame().split("\n")[0].at(-1)).toBe("?")
+    expect(viewer.app.captureCharFrame().split("\n")[0].trim()).toBe("")
+    expect(viewer.app.captureCharFrame().split("\n")[footer.y + 1]).toMatch(/^  escape close\s+\? see all $/)
     viewer.app.mockInput.pressKey("d")
     await viewer.app.waitForFrame((frame) => frame.includes("Diff source"))
     viewer.app.mockInput.pressEscape()
     await viewer.app.waitForFrame((frame) => !frame.includes("Diff source"))
+  } finally {
+    viewer.app.renderer.destroy()
+  }
+})
+
+test("full screen keeps its tree down to 88 columns and uses the compact layout below", async () => {
+  const viewer = await renderDiffViewer(manyDiffs.slice(0, 3), { width: 88, height: 24, kittyKeyboard: true })
+  try {
+    await viewer.app.waitForFrame((frame) => frame.includes("const first"))
+    viewer.app.mockInput.pressKey("m")
+    await viewer.app.flush()
+    const scroll = findScrollBox(viewer.app.renderer.root)!
+    expect(viewer.app.renderer.root.findDescendantById("diff-files")).toBeDefined()
+    expect(viewer.app.renderer.root.findDescendantById("diff-footer")).toBeUndefined()
+    // Full cards are inset two columns from the patch pane.
+    expect(viewer.app.renderer.root.findDescendantById("diff-file-header-0")!.width).toBe(scroll.viewport.width - 4)
+
+    viewer.app.resize(87, 24)
+    await viewer.app.flush()
+    expect(findScrollBox(viewer.app.renderer.root)).toBe(scroll)
+    expect(viewer.app.renderer.root.findDescendantById("diff-files")).toBeUndefined()
+    expect(viewer.app.renderer.root.findDescendantById("diff-file-header-0")!.width).toBe(87)
+    const second = viewer.app.renderer.root.findDescendantById("diff-file-header-1")
+    if (!(second instanceof BoxRenderable)) throw new Error("Missing second file title")
+    // The gap above a flush card takes the card's color across the full width, without an inset notch.
+    expect(
+      viewer.app
+        .captureSpans()
+        .lines[second.y - 1].spans.flatMap((span) => Array.from({ length: span.width }, () => span.fg)),
+    ).toEqual(Array.from({ length: 87 }, () => second.backgroundColor))
+    expect(viewer.app.renderer.root.findDescendantById("diff-review-count")!.y).toBe(1)
+    const footer = viewer.app.renderer.root.findDescendantById("diff-footer")!
+    expect(viewer.app.captureCharFrame().split("\n")[footer.y + 1]).toMatch(/^  escape close\s+\? see all $/)
+    expect(viewer.app.captureCharFrame()).toContain("1/3")
+    viewer.app.mockInput.pressKey("b")
+    await viewer.app.flush()
+    expect(viewer.app.renderer.root.findDescendantById("diff-files")).toBeUndefined()
+
+    viewer.app.resize(88, 24)
+    await viewer.app.flush()
+    expect(viewer.app.renderer.root.findDescendantById("diff-files")).toBeDefined()
+    expect(viewer.app.renderer.root.findDescendantById("diff-footer")).toBeUndefined()
+    expect(viewer.app.captureCharFrame()).toContain("1/3")
   } finally {
     viewer.app.renderer.destroy()
   }
@@ -1209,7 +1261,8 @@ test("compact help scrolls at a narrow size and reflects customized bindings", a
     expect(viewer.app.captureCharFrame()).not.toContain("alt+↓")
     scroll.scrollTo(scroll.scrollHeight)
     await viewer.app.flush()
-    expect(viewer.app.captureCharFrame()).toContain("Show / hide file tree")
+    // The compact layout has no file tree to toggle.
+    expect(viewer.app.captureCharFrame()).not.toContain("Show / hide file tree")
     expect(viewer.app.captureCharFrame()).not.toContain("Focus files")
     expect(viewer.app.captureCharFrame()).toMatch(/x\s+Close diff viewer/)
     viewer.app.mockInput.pressEscape()
@@ -1359,7 +1412,8 @@ test.each(["patch", "image", "fallback"] as const)(
       if (!(header instanceof BoxRenderable)) throw new Error("Missing reviewed file title")
       expect(header.parent?.height).toBe(header.height)
       expect(header.height).toBe(2)
-      expect(viewer.app.captureCharFrame().split("\n")[header.y + 1].trim()).toBe("▀".repeat(header.width + 4))
+      // Compact cards are flush with the pane edges.
+      expect(viewer.app.captureCharFrame().split("\n")[header.y + 1].trim()).toBe("▀".repeat(header.width))
       expect(header.y).toBe(scroll.viewport.y)
       expect(viewer.app.captureCharFrame()).toContain(file.file)
       expect(viewer.app.captureCharFrame()).toContain("✓")
