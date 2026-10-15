@@ -64,7 +64,7 @@ export const DialogSelectModelUnpaid: Component<{ model?: ModelState }> = (props
       const buttons = Array.from(listEl.querySelectorAll<HTMLButtonElement>("button"))
 
       if (buttons.length === 0) return
-      const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
+      const index = buttons.findIndex((button) => button === document.activeElement)
 
       const next =
         index < 0 ? (e.key === "ArrowDown" ? 0 : buttons.length - 1) : index + (e.key === "ArrowDown" ? 1 : -1)
