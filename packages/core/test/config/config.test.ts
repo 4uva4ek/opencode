@@ -16,6 +16,7 @@ import { ConfigPermissionV1 } from "@opencode/core/v1/config/permission"
 import { ConfigNormalize } from "@opencode/core/config/normalize"
 import { Watcher } from "@opencode/core/filesystem/watcher"
 import { Bus } from "@opencode/core/bus"
+import { FSUtil } from "@opencode/util/fs-util"
 import { Global } from "@opencode/util/global"
 import { Location } from "@opencode/core/location"
 import { Project } from "@opencode/core/project"
@@ -1225,7 +1226,7 @@ describe("Config", () => {
               {
                 type: "directory",
                 path: AbsolutePath.make(path.join(tmp.path, "global")),
-                ignore: ["**/{node_modules,.git}/**", ".git", "node_modules"],
+                ignore: FSUtil.ignoreGlobs.toSorted(),
               },
               {
                 type: "entries",
