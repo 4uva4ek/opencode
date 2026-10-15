@@ -40,7 +40,6 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
-    "EnterpriseStorage": import("@cloudflare/workers-types").R2Bucket
     "FEISHU_APP_ID": {
       "type": "sst.sst.Secret"
       "value": string
