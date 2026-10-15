@@ -949,6 +949,11 @@ export const dict = {
   "settings.providers.tag.other": "Other",
   "settings.models.title": "Models",
   "settings.models.description": "Choose which models appear in model picker",
+  "settings.models.sync": "Sync",
+  "settings.models.sync.description": "Fetch the provider's model list and add new models",
+  "settings.models.sync.done.title": "{{provider}} models synced",
+  "settings.models.sync.done.added": "New models: {{count}}. Turn them on to show them in the model picker.",
+  "settings.models.sync.done.none": "No new models found.",
   "settings.models.enableAll": "Enable all models",
   "settings.models.disableAll": "Disable all models",
 

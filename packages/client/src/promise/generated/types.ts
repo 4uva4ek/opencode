@@ -176,6 +176,8 @@ export type GenerateTextResponse = { data: { text: string } }
 
 export type IntegrationID = string
 
+export type ProviderSyncResult = { added: Array<string>; total: number }
+
 export type IntegrationMethodID = string
 
 export type IntegrationEnvMethod = { type: "env"; names: Array<string> }
@@ -2786,6 +2788,14 @@ export type ProviderNotFoundError = {
 }
 export const isProviderNotFoundError = (value: unknown): value is ProviderNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ProviderNotFoundError"
+
+export type ProviderSyncError = {
+  readonly _tag: "ProviderSyncError"
+  readonly providerID: string
+  readonly message: string
+}
+export const isProviderSyncError = (value: unknown): value is ProviderSyncError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ProviderSyncError"
 
 export type IntegrationNotFoundError = {
   readonly _tag: "IntegrationNotFoundError"
@@ -5782,6 +5792,13 @@ export type ProviderGetInput = {
 }
 
 export type ProviderGetOutput = { location: LocationPublicRef; data: ProviderInfo }
+
+export type ProviderSyncInput = {
+  readonly providerID: { readonly providerID: string }["providerID"]
+  readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]
+}
+
+export type ProviderSyncOutput = { location: LocationPublicRef; data: ProviderSyncResult }
 
 export type IntegrationListInput = {
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]

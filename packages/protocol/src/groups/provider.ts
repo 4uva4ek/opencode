@@ -2,8 +2,13 @@ import { Provider } from "@opencode/schema/provider"
 import { Location } from "@opencode/schema/location"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
-import { ProviderNotFoundError, ServiceUnavailableError } from "../errors.js"
+import { ProviderNotFoundError, ProviderSyncError, ServiceUnavailableError } from "../errors.js"
 import { LocationQuery, locationQueryOpenApi } from "./location.js"
+
+export const ProviderSyncResult = Schema.Struct({
+  added: Schema.Array(Schema.String),
+  total: Schema.Int,
+}).annotate({ identifier: "Provider.SyncResult" })
 
 export const ProviderGroup = HttpApiGroup.make("server.provider")
   .add(
@@ -34,6 +39,23 @@ export const ProviderGroup = HttpApiGroup.make("server.provider")
           identifier: "provider.get",
           summary: "Get provider",
           description: "Retrieve a single AI provider so clients can inspect its availability and endpoint settings.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.post("provider.sync", "/api/provider/:providerID/sync", {
+      params: { providerID: Provider.ID },
+      query: LocationQuery,
+      success: Location.response(ProviderSyncResult),
+      error: [ProviderNotFoundError, ProviderSyncError, ServiceUnavailableError],
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "provider.sync",
+          summary: "Sync provider models",
+          description:
+            "Fetch the provider's model listing and add models missing from the catalog to the global configuration.",
         }),
       ),
   )

@@ -113,6 +113,8 @@ import type {
   ProviderListOutput,
   ProviderGetInput,
   ProviderGetOutput,
+  ProviderSyncInput,
+  ProviderSyncOutput,
   IntegrationListInput,
   IntegrationListOutput,
   IntegrationGetInput,
@@ -1172,6 +1174,18 @@ export function make(options: ClientOptions) {
             query: { location: input["location"] },
             successStatus: 200,
             declaredStatuses: [400, 401, 404, 503],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      sync: (input: ProviderSyncInput, requestOptions?: RequestOptions) =>
+        request<ProviderSyncOutput>(
+          {
+            method: "POST",
+            path: `/api/provider/${encodeURIComponent(input.providerID)}/sync`,
+            query: { location: input["location"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401, 404, 502, 503],
             empty: false,
           },
           requestOptions,

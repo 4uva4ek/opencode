@@ -22,6 +22,21 @@ export type LocalModel = {
 
 export type LocalDiscoveryClient = ReturnType<typeof createClient>
 
+// Every running plugin instance registers here, one per Location, so a manual sync reaches all of them.
+const refreshers = new Map<string, Set<() => Effect.Effect<readonly string[], unknown>>>()
+
+/**
+ * Rediscovers a local provider's models now instead of waiting for the polling interval and returns the
+ * discovered model IDs. Undefined when no local provider plugin owns the provider.
+ */
+export function refreshLocalProvider(providerID: string) {
+  const registered = refreshers.get(providerID)
+  if (!registered || registered.size === 0) return undefined
+  return Effect.forEach([...registered], (refresh) => refresh(), { concurrency: "unbounded" }).pipe(
+    Effect.map((results) => [...new Set(results.flat())]),
+  )
+}
+
 export function createLocalProviderPlugin<Discovered>(input: {
   readonly id: string
   readonly providerID: string
@@ -90,13 +105,14 @@ export function createLocalProviderPlugin<Discovered>(input: {
           }
         })
 
-        const discover = Effect.fn("LocalProviderPlugin.discover")(function* () {
+        const discover = Effect.fn("LocalProviderPlugin.discover")(function* (force: boolean) {
           const current = source.current
           if (!current.endpoint) return undefined
           return yield* discoveryLock.withPermit(
             Effect.gen(function* () {
               const cached = discovery.get(current.root)
               if (
+                !force &&
                 cached &&
                 cached.apiKey === current.apiKey &&
                 Date.now() - cached.checked < Duration.toMillis(interval)
@@ -114,8 +130,8 @@ export function createLocalProviderPlugin<Discovered>(input: {
           )
         })
 
-        const refresh = Effect.fn("LocalProviderPlugin.refresh")(function* () {
-          const result = yield* discover()
+        const refresh = Effect.fn("LocalProviderPlugin.refresh")(function* (force = false) {
+          const result = yield* discover(force)
           if (!result?.models || result.source !== source.current) return
           const hash = JSON.stringify(result.models)
           if (hash === loaded.hash) return
@@ -127,6 +143,19 @@ export function createLocalProviderPlugin<Discovered>(input: {
 
         // Keep the last successful inventory through transient outages instead of flickering model availability.
         yield* refresh().pipe(Effect.ignore, Effect.repeat(Schedule.spaced(interval)), Effect.forkScoped)
+
+        // A manual sync surfaces discovery failures instead of keeping the last inventory silently.
+        const forceRefresh = Effect.fn("LocalProviderPlugin.forceRefresh")(function* () {
+          if (!source.current.endpoint) return yield* Effect.fail(new Error(`${input.name} has no endpoint to query`))
+          yield* refresh(true)
+          return loaded.models.map((item) => input.model(item).id)
+        })
+        const registered = refreshers.get(input.providerID) ?? new Set()
+        refreshers.set(input.providerID, registered)
+        yield* Effect.acquireRelease(
+          Effect.sync(() => registered.add(forceRefresh)),
+          () => Effect.sync(() => registered.delete(forceRefresh)),
+        )
         const reload = Effect.fn("LocalProviderPlugin.reload")(function* () {
           const next = configured(yield* config.entries(), input.providerID, defaultOrigin, suffix)
           if (

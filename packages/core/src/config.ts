@@ -3,7 +3,7 @@ export * as Config from "./config.js"
 import { makeLocationNode } from "@opencode/util/effect/app-node"
 import path from "path"
 import { isDeepStrictEqual } from "node:util"
-import { applyEdits, modify, type ParseError, parse } from "jsonc-parser"
+import { applyEdits, type JSONPath, modify, type ParseError, parse } from "jsonc-parser"
 import { Context, Effect, FiberMap, Layer, Option, PubSub, Ref, Schema, Semaphore, Stream } from "effect"
 import { Directory, Document, Info, type Patch, type Entry, Event } from "@opencode/schema/config"
 import { Credential } from "./credential.js"
@@ -42,6 +42,17 @@ export interface Interface {
   readonly changes: () => Stream.Stream<Watcher.Update>
   /** Updates supported global config fields while preserving unrelated JSONC content. */
   readonly update?: (patch: Patch) => Effect.Effect<void, FSUtil.Error>
+  /** Adds model definitions under one provider in the global config, keeping existing entries and JSONC content. */
+  readonly addProviderModels?: (
+    providerID: string,
+    models: Readonly<Record<string, ProviderModel>>,
+  ) => Effect.Effect<void, FSUtil.Error>
+}
+
+/** The subset of a config model definition that provider model sync writes. */
+export interface ProviderModel {
+  readonly name?: string
+  readonly limit?: { readonly context?: number; readonly output?: number }
 }
 
 export const Options = Schema.Struct({
@@ -377,8 +388,12 @@ export const layer = (options?: Options) =>
       )
       yield* reloadLock.withPermit(reconcile(initial))
 
-      const update = Effect.fn("Config.update")(
-        function* (patch: Patch) {
+      // Edits apply one at a time so each path is resolved against the text the previous edit produced.
+      const edit = Effect.fn("Config.edit")(
+        function* (
+          method: string,
+          edits: (text: string) => ReadonlyArray<{ readonly path: JSONPath; readonly value: unknown }>,
+        ) {
           const directory = initial.global ?? AbsolutePath.make(globalService.config)
           const candidates = ConfigDiscovery.names.map((name) => path.join(directory, name))
           const filepath =
@@ -386,19 +401,35 @@ export const layer = (options?: Options) =>
           const text = (yield* fs.readFileStringSafe(filepath)) ?? "{}\n"
           const updated = yield* Effect.try({
             try: () =>
-              applyEdits(
+              edits(text).reduce(
+                (current, item) =>
+                  applyEdits(
+                    current,
+                    modify(current, item.path, item.value, {
+                      formattingOptions: { tabSize: 2, insertSpaces: true },
+                    }),
+                  ),
                 text,
-                modify(text, ["shell"], patch.shell ?? undefined, {
-                  formattingOptions: { tabSize: 2, insertSpaces: true },
-                }),
               ),
-            catch: (cause) => new FSUtil.FileSystemError({ method: "config.update", cause }),
+            catch: (cause) => new FSUtil.FileSystemError({ method, cause }),
           })
           yield* fs.writeWithDirs(filepath, updated.endsWith("\n") ? updated : `${updated}\n`)
           yield* requestReload
         },
         (effect) => updateLock.withPermit(effect),
       )
+
+      const update = (patch: Patch) =>
+        edit("config.update", () => [{ path: ["shell"], value: patch.shell ?? undefined }])
+
+      const addProviderModels = (providerID: string, models: Readonly<Record<string, ProviderModel>>) =>
+        edit("config.addProviderModels", (text) => {
+          const legacy = legacyProvider(text, providerID)
+          return Object.entries(models).map(([id, model]) => ({
+            path: [legacy ? "provider" : "providers", providerID, "models", id],
+            value: legacy ? legacyModel(model) : model,
+          }))
+        })
 
       return Service.of({
         entries: Effect.fnUntraced(function* () {
@@ -411,9 +442,41 @@ export const layer = (options?: Options) =>
           }),
         changes: () => Stream.fromPubSub(updates),
         update,
+        addProviderModels,
       })
     }),
   )
+
+/**
+ * True when the file defines the provider only in the legacy `provider` map. Normalization replaces a
+ * legacy provider wholesale with a `providers` entry of the same ID, so a models-only `providers` entry
+ * would drop the legacy endpoint, package, and credentials.
+ */
+function legacyProvider(text: string, providerID: string) {
+  const document: unknown = parse(text, [], { allowTrailingComma: true })
+  return (
+    isRecord(field(field(document, "provider"), providerID)) &&
+    !isRecord(field(field(document, "providers"), providerID))
+  )
+}
+
+function field(value: unknown, key: string) {
+  return isRecord(value) && Object.hasOwn(value, key) ? value[key] : undefined
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+// Legacy model limits require both context and output, so a partial limit is left out rather than written invalid.
+function legacyModel(model: ProviderModel) {
+  return {
+    ...(model.name === undefined ? {} : { name: model.name }),
+    ...(model.limit?.context && model.limit.output
+      ? { limit: { context: model.limit.context, output: model.limit.output } }
+      : {}),
+  }
+}
 
 export function configured(options?: Options) {
   return makeLocationNode({
