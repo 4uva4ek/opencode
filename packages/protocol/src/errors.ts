@@ -89,6 +89,15 @@ export class ProviderNotFoundError extends Schema.TaggedError<ProviderNotFoundEr
   { httpApiStatus: 404 },
 ) {}
 
+export class ProviderSyncError extends Schema.TaggedError<ProviderSyncError>()(
+  "ProviderSyncError",
+  {
+    providerID: Schema.String,
+    message: Schema.String,
+  },
+  { httpApiStatus: 502 },
+) {}
+
 export class IntegrationNotFoundError extends Schema.TaggedError<IntegrationNotFoundError>()(
   "IntegrationNotFoundError",
   {

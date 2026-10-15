@@ -1,12 +1,17 @@
+import { Button } from "@opencode/ui/button"
 import { useFilteredList } from "@opencode/ui/hooks"
 import { Switch } from "@opencode/ui/switch"
 import { type Component, createEffect, createMemo, For, Show } from "solid-js"
+import { createStore } from "solid-js/store"
 
 import { Schema } from "effect"
 import { Persistence } from "@/runtime/persistence/schema"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useModels } from "@/providers/models/models"
 import { useServerSDK } from "@/runtime/server/client"
+import { useData } from "@/runtime/server/current"
+import { formatServerError } from "@/runtime/server/errors"
+import { showToast } from "@/shell/notifications/toast"
 import { popularProviders } from "@/providers/catalog/providers"
 import { Persist, persisted } from "@/runtime/persistence/storage"
 import { SettingsList } from "@/settings/list"
@@ -31,6 +36,7 @@ export const SettingsModels: Component<{
   const language = useLanguage()
   const models = useModels()
   const serverSdk = useServerSDK()
+  const data = useData()
 
   const [store, setStore] = persisted(
     Persist.serverGlobal(serverSdk.scope, "settings-v2.models.providers"),
@@ -74,6 +80,46 @@ export const SettingsModels: Component<{
       .list()
       .filter((item) => item.provider.id === providerID)
       .forEach((item) => models.setVisibility({ providerID, modelID: item.id }, visible))
+
+  const [syncing, setSyncing] = createStore<Record<string, boolean>>({})
+
+  const refreshCatalog = async () => {
+    data.location.provider.invalidate()
+    data.location.model.invalidate()
+    await Promise.all([data.location.provider.sync(), data.location.model.sync()])
+  }
+
+  const syncModels = async (providerID: string, name: string) => {
+    setSyncing(providerID, true)
+
+    try {
+      const result = await serverSdk.api.provider.sync({ providerID })
+      const added = result.data.added
+      // The server reloads its config after writing the new models, so the first refresh can still miss them.
+      const deadline = Date.now() + 5_000
+      const listed = () => added.every((modelID) => models.find({ providerID, modelID }))
+      await refreshCatalog()
+
+      while (!listed() && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 250))
+        await refreshCatalog()
+      }
+
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: language.t("settings.models.sync.done.title", { provider: name }),
+        description:
+          added.length > 0
+            ? language.t("settings.models.sync.done.added", { count: String(added.length) })
+            : language.t("settings.models.sync.done.none"),
+      })
+    } catch (error) {
+      showToast({ title: language.t("common.requestFailed"), description: formatServerError(error, language.t) })
+    } finally {
+      setSyncing(providerID, false)
+    }
+  }
 
   function ModelRows(props: { items: ModelItem[] }) {
     return (
@@ -157,7 +203,8 @@ export const SettingsModels: Component<{
 
       <div class="settings-tab-body settings-models">
         <Show
-          when={!list.grouped.loading}
+          // Regrouping after a catalog refresh reloads the resource; keep the current rows so the scroll position survives.
+          when={!list.grouped.loading || list.grouped.latest.length > 0}
           fallback={
             <div class="settings-models-status">
               {language.t("common.loading")}
@@ -185,6 +232,18 @@ export const SettingsModels: Component<{
               disabled={searching()}
               onExpandedChange={(key, value) => setStore("collapsed", key, !value)}
               onSetVisibility={setProviderVisibility}
+              action={(group) => (
+                <Button
+                  size="small"
+                  variant={syncing[group.category] ? "loading" : "ghost"}
+                  icon="download"
+                  disabled={syncing[group.category]}
+                  title={language.t("settings.models.sync.description")}
+                  onClick={() => void syncModels(group.category, group.items[0].provider.name)}
+                >
+                  {language.t("settings.models.sync")}
+                </Button>
+              )}
               ref={(providerID, element) => sections.set(providerID, element)}
               rows={(items) => <ModelRows items={items} />}
             />

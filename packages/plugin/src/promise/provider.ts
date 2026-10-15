@@ -27,7 +27,8 @@ export interface ProviderEditor {
   }
 }
 
-export interface ProviderDomain extends ProviderApi {
+// Model sync writes the global config, so it stays a client action and is not part of the plugin surface.
+export interface ProviderDomain extends Omit<ProviderApi, "sync"> {
   readonly transform: Transform<ProviderEditor>
   readonly reload: () => Promise<void>
 }

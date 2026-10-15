@@ -21,6 +21,7 @@ import { Location } from "./location.js"
 import { LocationLifecycle } from "./location-lifecycle.js"
 import { FileAccess } from "./file-access.js"
 import { ModelResolver } from "./model-resolver.js"
+import { ProviderSync } from "./provider-sync.js"
 import { Mcp } from "./mcp/index.js"
 import { Permission } from "./permission.js"
 import { Plugin } from "./plugin.js"
@@ -70,6 +71,7 @@ const nodes = [
   Provider.node,
   Model.node,
   ModelResolver.node,
+  ProviderSync.node,
   AISDK.node,
   Plugin.node,
   PluginHooks.node,

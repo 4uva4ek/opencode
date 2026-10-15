@@ -579,6 +579,11 @@ export const dict = {
   "settings.providers.tag.other": "Другое",
   "settings.models.title": "Модели",
   "settings.models.description": "Настройки моделей будут доступны здесь.",
+  "settings.models.sync": "Синхр.",
+  "settings.models.sync.description": "Загрузить список моделей провайдера и добавить новые",
+  "settings.models.sync.done.title": "Модели {{provider}} синхронизированы",
+  "settings.models.sync.done.added": "Новых моделей: {{count}}. Включите нужные, чтобы они появились в выборе модели.",
+  "settings.models.sync.done.none": "Новых моделей не найдено.",
 
   "settings.permissions.tool.read.title": "Чтение",
   "settings.permissions.tool.read.description": "Чтение файла (по совпадению пути)",
