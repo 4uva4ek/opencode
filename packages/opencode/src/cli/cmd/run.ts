@@ -161,6 +161,7 @@ export const RunCommand = effectCmd({
       .option("share", {
         type: "boolean",
         describe: "deprecated: session sharing was discontinued",
+        hidden: true,
       })
       .option("model", {
         type: "string",
