@@ -13,7 +13,7 @@ export function WorkspaceSubmenu(props: {
   onViewAll?: () => void
 }) {
   const language = useLanguage()
-  const [store, setStore] = createStore({ search: "", focusSearch: false })
+  const [store, setStore] = createStore({ search: "", holdSearchFocus: false })
   let input: HTMLInputElement | undefined
   let list: HTMLDivElement | undefined
   const searchable = () => props.directories.length >= 10
@@ -26,7 +26,8 @@ export function WorkspaceSubmenu(props: {
 
   const focusSearch = () => {
     if (!searchable()) return
-    requestAnimationFrame(() => requestAnimationFrame(() => input?.focus({ preventScroll: true })))
+    setStore("holdSearchFocus", true)
+    input?.focus({ preventScroll: true })
   }
 
   return (
@@ -35,20 +36,13 @@ export function WorkspaceSubmenu(props: {
       overlap
       overflowPadding={24}
       onOpenChange={(open) => {
-        if (!open) {
-          setStore({ search: "", focusSearch: false })
-
-          return
-        }
-
-        if (store.focusSearch) focusSearch()
-        setStore("focusSearch", false)
+        if (!open) setStore({ search: "", holdSearchFocus: false })
       }}
     >
       <Menu.SubTrigger
         onClick={focusSearch}
         onKeyDown={(event) => {
-          if (["ArrowRight", "ArrowLeft", "Enter", " "].includes(event.key)) setStore("focusSearch", true)
+          if (["ArrowRight", "ArrowLeft", "Enter", " "].includes(event.key)) focusSearch()
         }}
       >
         <Icon name="outline-worktree" />
@@ -58,6 +52,12 @@ export function WorkspaceSubmenu(props: {
         <Menu.SubContent
           data-slot="workspace-submenu"
           class="max-h-[min(320px,calc(100dvh-48px))] w-[200px] overflow-hidden"
+          // Kobalte autofocuses a submenu's content or first item a tick after it opens. Send that focus back to the
+          // search field until the user moves the pointer into the submenu or arrows out of the field.
+          onFocusIn={(event) => {
+            if (store.holdSearchFocus && event.target !== input) input?.focus({ preventScroll: true })
+          }}
+          oncapture:pointermove={() => setStore("holdSearchFocus", false)}
         >
           <Show when={searchable()}>
             <div class="flex h-7 shrink-0 items-center gap-2 rounded-sm ps-3 pe-2 text-v2-icon-icon-muted">
@@ -73,6 +73,7 @@ export function WorkspaceSubmenu(props: {
                   if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                     event.preventDefault()
                     event.stopPropagation()
+                    setStore("holdSearchFocus", false)
                     const items = list?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([data-disabled])')
                     items?.[event.key === "ArrowDown" ? 0 : items.length - 1]?.focus()
 
