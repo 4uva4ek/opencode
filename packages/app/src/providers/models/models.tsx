@@ -17,6 +17,9 @@ function modelKey(model: ModelKey) {
   return `${model.providerID}:${model.modelID}`
 }
 
+export const isFreeModel = (model: { provider: { id: string }; cost?: { input: number } }) =>
+  model.provider.id === "opencode" && (!model.cost || model.cost.input === 0)
+
 const createModelsController = (directory: Accessor<string | undefined>) => {
   const providers = useProviders(() => directory())
   const models = useGlobal().models
@@ -54,7 +57,8 @@ const createModelsController = (directory: Accessor<string | undefined>) => {
       mapValues((models) =>
         pipe(
           models,
-          groupBy((x) => x.family),
+          // A free model shares its family and release date with its paid twin, so group them apart.
+          groupBy((x) => `${x.family}:${isFreeModel(x)}`),
           values(),
           (groups) =>
             groups.flatMap((g) => {
