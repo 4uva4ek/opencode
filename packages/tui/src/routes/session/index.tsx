@@ -117,7 +117,6 @@ const sessionBindingCommands = [
   "session.timeline",
   "session.fork",
   "session.compact",
-  "session.unshare",
   "session.undo",
   "session.redo",
   "session.sidebar.toggle",
@@ -540,29 +539,6 @@ export function Session() {
           modelID: selectedModel.modelID,
           providerID: selectedModel.providerID,
         })
-        dialog.clear()
-      },
-    },
-    {
-      title: "Unshare session",
-      value: "session.unshare",
-      category: "Session",
-      enabled: !!session()?.share?.url,
-      slash: {
-        name: "unshare",
-      },
-      run: async () => {
-        await sdk.client.session
-          .unshare({
-            sessionID: route.sessionID,
-          })
-          .then(() => toast.show({ message: "Session unshared successfully", variant: "success" }))
-          .catch((error) => {
-            toast.show({
-              message: error instanceof Error ? error.message : "Failed to unshare session",
-              variant: "error",
-            })
-          })
         dialog.clear()
       },
     },

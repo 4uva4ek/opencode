@@ -148,28 +148,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     return permission.isAutoAcceptingDirectory(sdk().directory)
   }
 
-  const unshare = async () => {
-    const sessionID = params.id
-    if (!sessionID) return
-
-    await sdk()
-      .client.session.unshare({ sessionID })
-      .then(() =>
-        showToast({
-          title: language.t("toast.session.unshare.success.title"),
-          description: language.t("toast.session.unshare.success.description"),
-          variant: "success",
-        }),
-      )
-      .catch(() =>
-        showToast({
-          title: language.t("toast.session.unshare.failed.title"),
-          description: language.t("toast.session.unshare.failed.description"),
-          variant: "error",
-        }),
-      )
-  }
-
   const exportSession = async () => {
     const sessionID = params.id
     if (!sessionID) return
@@ -354,21 +332,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       () => import("@/components/dialog-fork"),
       (x) => dialog.show(() => <x.DialogFork />),
     )
-  }
-
-  // Session sharing was discontinued; keep unshare so existing share links can be cleared.
-  const shareCmds = () => {
-    if (!info()?.share?.url) return []
-    return [
-      sessionCommand({
-        id: "session.unshare",
-        title: language.t("command.session.unshare"),
-        description: language.t("command.session.unshare.description"),
-        slash: "unshare",
-        disabled: !params.id,
-        onSelect: unshare,
-      }),
-    ]
   }
 
   const sessionCmds = () => [
@@ -571,7 +534,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
 
   command.register("session", () => [
     ...sessionCmds(),
-    ...shareCmds(),
     ...fileCmds(),
     ...contextCmds(),
     ...viewCmds(),
