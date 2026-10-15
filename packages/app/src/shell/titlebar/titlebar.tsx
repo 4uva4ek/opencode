@@ -15,6 +15,7 @@ import { useSettings } from "@/settings/model"
 import { WindowsAppMenu } from "./windows-menu"
 import { applyPath, backPath, forwardPath, type HistoryLocation } from "./history"
 import { TitlebarTabStrip } from "@/shell/titlebar/tab-strip"
+import { macTrafficLightsBaseWidth, SidebarToggle } from "@/shell/sidebar-toggle"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMediaQuery } from "@solid-primitives/media"
 import { readSessionTabsRemovedDetail, SESSION_TABS_REMOVED_EVENT } from "@/shell/titlebar/session-events"
@@ -45,14 +46,14 @@ const minTitlebarZoom = 0.25
 
 const windowsControlsBaseWidth = 138 // 3 native Windows caption buttons at 46px each.
 
-// Native controls: 14px left inset, two 20px button pitches, and a 14px button.
-const macTrafficLightsBaseWidth = 68
-
 const macTrafficLightsTopClearance = 28
 
 // iOS blurs page content just below the status bar in Home Screen web apps, so with a top safe area the phone
 // titlebar row stays 16px clear of it, as ChatGPT's phone header does. Without one, 8px matches the content gap below.
 const mobileTopClearance = "max(8px, min(16px, env(safe-area-inset-top, 0px) * 1000))"
+
+const channelIndicatorVisible =
+  !!import.meta.env.VITE_OPENCODE_CHANNEL && import.meta.env.VITE_OPENCODE_CHANNEL !== "prod"
 
 export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
   const platform = usePlatform()
@@ -109,6 +110,7 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
 
   const titlebarItems = useTitlebarItems()
   const hideVerticalTitlebar = createMemo(() => !!props.verticalTabs && !windows())
+  const homeInSidebarHeader = () => !windows() && !macTrafficLights() && !channelIndicatorVisible
 
   const back = () => {
     const next = backPath(history)
@@ -540,6 +542,9 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
                 <Show when={windows() || linux()}>
                   <WindowsAppMenu command={command} platform={platform} />
                 </Show>
+                <Show when={windows() && props.verticalTabs}>
+                  <SidebarToggle />
+                </Show>
                 <Show when={!mobile() && !props.verticalTabs}>{homeButton()}</Show>
 
                 <Show
@@ -715,17 +720,45 @@ export function Titlebar(props: { verticalTabs?: { mount?: HTMLElement } }) {
                             mount={mount}
                             ref={(element) => (element.className = "flex size-full min-h-0 flex-col")}
                           >
-                            <Show when={macVerticalTabs()}>
-                              <div
-                                class="mb-4 min-h-7 w-full shrink-0"
-                                style={{ height: `${macTrafficLightsTopClearance / zoom()}px` }}
-                                data-tauri-drag-region
-                              />
-                            </Show>
                             <Show when={!windows()}>
-                              <ChannelIndicator sidebar />
+                              {/* Shares the session header's 48px center line. Without traffic lights or a channel
+                                  icon, Home fills the start so the row doesn't leave an empty band. */}
+                              <div
+                                class="flex w-full shrink-0 gap-2"
+                                classList={{
+                                  "items-start pt-2.5": homeInSidebarHeader(),
+                                  "mb-2 h-12 items-center": !homeInSidebarHeader(),
+                                }}
+                                style={{
+                                  "min-height": macVerticalTabs()
+                                    ? `${macTrafficLightsTopClearance / zoom()}px`
+                                    : undefined,
+                                }}
+                                data-tauri-drag-region
+                              >
+                                <Show when={macTrafficLights()}>
+                                  {/* The sidebar's 10px start padding already covers part of the traffic lights. */}
+                                  <div
+                                    class="shrink-0"
+                                    style={{ width: `calc(${macTrafficLightsBaseWidth / zoom()}px - 10px)` }}
+                                    aria-hidden="true"
+                                  />
+                                </Show>
+                                <Show
+                                  when={homeInSidebarHeader()}
+                                  fallback={
+                                    <>
+                                      <ChannelIndicator sidebar />
+                                      <div class="flex-1" />
+                                    </>
+                                  }
+                                >
+                                  <div class="min-w-0 flex-1">{homeButton(true)}</div>
+                                </Show>
+                                <SidebarToggle />
+                              </div>
                             </Show>
-                            {homeButton(true)}
+                            <Show when={!homeInSidebarHeader()}>{homeButton(true)}</Show>
                             <RecentlyClosedTabsMenu
                               vertical
                               onNewTab={openNewTab}
@@ -798,7 +831,7 @@ function ChannelIndicator(props: { horizontal?: boolean; sidebar?: boolean }) {
     <Tooltip
       placement={props.sidebar ? "right" : "bottom"}
       value={label()}
-      class={`shrink-0 [app-region:no-drag] ${props.sidebar ? "mb-4 ms-0.5 self-start" : ""} ${props.horizontal ? "me-1.5" : ""} ${props.horizontal && platform.platform === "web" ? "ps-2.5" : ""}`}
+      class={`shrink-0 [app-region:no-drag] ${props.sidebar ? "ms-0.5" : ""} ${props.horizontal ? "me-1.5" : ""} ${props.horizontal && platform.platform === "web" ? "ps-2.5" : ""}`}
     >
       <Dynamic
         component={debug() ? "button" : "div"}

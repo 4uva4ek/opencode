@@ -1,4 +1,4 @@
-import { Show, Suspense, type ParentProps } from "solid-js"
+import { createEffect, on, Show, Suspense, type ParentProps } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { ResizeHandle } from "@opencode/ui/resize-handle"
@@ -11,19 +11,53 @@ import { useSettingsSurface } from "@/settings/surface"
 import { useSettings } from "@/settings/model"
 import { ExtensionServerCover } from "@/runtime/extension/server-shell"
 import { ExtensionSlot } from "@/runtime/extension/render"
+import { useCommand } from "@/shell/commands/command"
+import { useLanguage } from "@/runtime/i18n/language"
 
 export default function Layout(props: ParentProps) {
   const platform = usePlatform()
   const settings = useSettingsSurface()
   const preferences = useSettings()
+  const command = useCommand()
+  const language = useLanguage()
   const mobile = createMediaQuery("(max-width: 767px)")
 
-  const [state, setState] = createStore<{ tabsWidth: number; tabsMount: HTMLElement | undefined }>({
+  const [state, setState] = createStore<{
+    tabsWidth: number
+    tabsMount: HTMLElement | undefined
+    tabsAnimating: boolean
+  }>({
     tabsWidth: 260,
     tabsMount: undefined,
+    tabsAnimating: false,
   })
 
   const verticalTabs = () => preferences.appearance.tabLayout() === "vertical" && !mobile()
+
+  // Animate only open/close; resize drags must track the pointer.
+  createEffect(
+    on(
+      preferences.appearance.sidebarOpen,
+      () => {
+        if (verticalTabs()) setState("tabsAnimating", true)
+      },
+      { defer: true },
+    ),
+  )
+
+  command.register("sidebar", () =>
+    verticalTabs()
+      ? [
+          {
+            id: "sidebar.toggle",
+            title: language.t("command.sidebar.toggle"),
+            category: language.t("command.category.view"),
+            keybind: "mod+shift+b",
+            onSelect: () => preferences.appearance.setSidebarOpen(!preferences.appearance.sidebarOpen()),
+          },
+        ]
+      : [],
+  )
   const bottomTitlebar = () => mobile() && preferences.general.mobileTitlebarPosition() === "bottom"
 
   return (
@@ -49,22 +83,43 @@ export default function Layout(props: ParentProps) {
         <div class="flex flex-1 min-h-0 min-w-0 flex-row">
           <Show when={verticalTabs()}>
             <aside
-              ref={(element) => setState("tabsMount", element)}
+              id="vertical-tabs-sidebar"
               data-slot="vertical-tabs-sidebar"
-              class="relative flex h-full min-h-0 shrink-0 flex-col bg-v2-background-bg-deep pe-0.5 ps-2.5 pb-[var(--shell-bottom-inset,8px)] pt-[var(--shell-top-inset,8px)]"
-              style={{
-                width: `${state.tabsWidth}px`,
-                "padding-bottom": "max(10px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))",
+              data-state={preferences.appearance.sidebarOpen() ? "open" : "closed"}
+              classList={{
+                "relative h-full min-h-0 shrink-0": true,
+                "transition-[width] duration-[240ms] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none":
+                  state.tabsAnimating,
+              }}
+              style={{ width: preferences.appearance.sidebarOpen() ? `${state.tabsWidth}px` : "0px" }}
+              inert={!preferences.appearance.sidebarOpen()}
+              onTransitionEnd={(event) => {
+                if (event.target === event.currentTarget) setState("tabsAnimating", false)
+              }}
+              onTransitionCancel={(event) => {
+                if (event.target === event.currentTarget) setState("tabsAnimating", false)
               }}
             >
-              <ResizeHandle
-                class="-end-2"
-                direction="horizontal"
-                size={state.tabsWidth}
-                min={140}
-                max={520}
-                onResize={(width) => setState("tabsWidth", width)}
-              />
+              <div class="absolute inset-0 overflow-hidden">
+                <div
+                  ref={(element) => setState("tabsMount", element)}
+                  class="flex h-full min-h-0 flex-col bg-v2-background-bg-deep pe-0.5 ps-2.5 pb-[var(--shell-bottom-inset,8px)] pt-[var(--shell-top-inset,8px)]"
+                  style={{
+                    width: `${state.tabsWidth}px`,
+                    "padding-bottom": "max(10px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))",
+                  }}
+                />
+              </div>
+              <Show when={preferences.appearance.sidebarOpen()}>
+                <ResizeHandle
+                  class="-end-2"
+                  direction="horizontal"
+                  size={state.tabsWidth}
+                  min={140}
+                  max={520}
+                  onResize={(width) => setState("tabsWidth", width)}
+                />
+              </Show>
             </aside>
           </Show>
           {/* Size containment collapses percentage-height descendants in WebKit. */}

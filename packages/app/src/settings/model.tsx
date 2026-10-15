@@ -130,6 +130,7 @@ const appearanceSchema = Persistence.struct({
   sans: Schema.String,
   terminal: Schema.String,
   tabLayout: Schema.Literals(["horizontal", "vertical"]),
+  sidebarOpen: Persistence.optional(Schema.Boolean),
 })
 
 const permissionsSchema = Persistence.struct({
@@ -400,6 +401,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         tabLayout: withFallback(() => store.appearance?.tabLayout, defaultSettings.appearance.tabLayout),
         setTabLayout(value: TabLayout) {
           setStore("appearance", "tabLayout", value)
+        },
+        sidebarOpen: withFallback(() => store.appearance?.sidebarOpen, true),
+        setSidebarOpen(value: boolean) {
+          setStore("appearance", "sidebarOpen", value)
         },
       },
       keybinds: {
